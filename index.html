@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Image Encryption Tool</title>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      background: #f0f4f8;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+    }
+    .card {
+      background: white;
+      padding: 30px;
+      border-radius: 15px;
+      box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+      text-align: center;
+      width: 400px;
+    }
+    h2 { color: #333; }
+    input, select, button {
+      width: 100%;
+      margin: 10px 0;
+      padding: 10px;
+      font-size: 15px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+    }
+    button {
+      background-color: #007bff;
+      color: white;
+      cursor: pointer;
+      border: none;
+      transition: 0.3s;
+    }
+    button:hover { background-color: #0056b3; }
+    canvas {
+      margin-top: 15px;
+      border: 1px solid #ddd;
+      display: none;
+    }
+    .note {
+      color: #666;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>🖼 Image Encryption Tool</h2>
+    <input type="file" id="fileInput" accept="image/*">
+    <input type="number" id="keyInput" placeholder="Enter numeric key">
+    <select id="mode">
+      <option value="swap">Swap Pixels</option>
+      <option value="xor">Math XOR</option>
+    </select>
+    <select id="action">
+      <option value="encrypt">Encrypt</option>
+      <option value="decrypt">Decrypt</option>
+    </select>
+    <button onclick="processImage()">Process Image</button>
+    <canvas id="canvas"></canvas>
+    <a id="downloadLink" style="display:none;">⬇ Download Result</a>
+    <p class="note">Choose an image → set key → select mode → click Process</p>
+  </div>
+
+  <script>
+    const fileInput = document.getElementById("fileInput");
+    const keyInput = document.getElementById("keyInput");
+    const modeSelect = document.getElementById("mode");
+    const actionSelect = document.getElementById("action");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const downloadLink = document.getElementById("downloadLink");
+
+    function processImage() {
+      const file = fileInput.files[0];
+      const key = parseInt(keyInput.value);
+      const mode = modeSelect.value;
+      const action = actionSelect.value;
+
+      if (!file || isNaN(key)) {
+        alert("Please select an image and enter a valid key!");
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const img = new Image();
+        img.onload = function() {
+          canvas.width = img.width;
+          canvas.height = img.height;
+          ctx.drawImage(img, 0, 0);
+          const imgData = ctx.getImageData(0, 0, img.width, img.height);
+          const data = imgData.data;
+
+          if (mode === "swap") {
+            swapPixels(data, img.width, img.height, key, action);
+          } else {
+            xorPixels(data, key);
+          }
+
+          ctx.putImageData(imgData, 0, 0);
+          canvas.style.display = "block";
+
+          canvas.toBlob(function(blob) {
+            const url = URL.createObjectURL(blob);
+            downloadLink.href = url;
+            downloadLink.download = `${action}_${mode}.png`; // ✅ Fixed template string
+            downloadLink.textContent = "⬇ Download Result Image";
+            downloadLink.style.display = "block";
+          });
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function xorPixels(data, key) {
+      for (let i = 0; i < data.length; i++) {
+        if ((i + 1) % 4 !== 0) { // skip alpha
+          data[i] = data[i] ^ (key & 0xFF);
+        }
+      }
+    }
+
+    function swapPixels(data, width, height, key, action) {
+      const totalPixels = width * height;
+      const indices = Array.from({ length: totalPixels }, (_, i) => i);
+      const rng = mulberry32(key);
+
+      // Shuffle the indices
+      for (let i = totalPixels - 1; i > 0; i--) {
+        const j = Math.floor(rng() * (i + 1));
+        [indices[i], indices[j]] = [indices[j], indices[i]];
+      }
+
+      const copy = new Uint8ClampedArray(data);
+
+      for (let i = 0; i < totalPixels; i++) {
+        const src = (action === "encrypt") ? indices[i] : indices.indexOf(i);
+        const di = i * 4, si = src * 4;
+        for (let k = 0; k < 4; k++) {
+          data[di + k] = copy[si + k];
+        }
+      }
+    }
+
+    // Deterministic RNG from seed
+    function mulberry32(seed) {
+      return function() {
+        var t = (seed += 0x6D2B79F5);
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+  </script>
+</body>
+</html>
